@@ -233,8 +233,19 @@ struct Index {
           })
           Text(episode.curriculumDesc || episode.desc || '').fontSize(13).fontColor('#777777').maxLines(2)
           }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-          if (this.runningIDs.includes(episode.id)) { Button('下载中，点击取消').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.downloads.cancel(episode.id); }); }) }
-          else { Button(this.downloaded.some((entry: DownloadEntry) => entry.id === episode.id) ? '已下载' : '↓', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor('#999999').width(48).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { if (!this.downloaded.some((entry: DownloadEntry) => entry.id === episode.id)) { await this.downloads.start(episode); } }); }) }
+          if (this.runningIDs.includes(episode.id)) {
+            Button({ type: ButtonType.Normal }) {
+              Image($r('app.media.download_cancel')).width(22).height(22)
+            }.width(44).height(44).padding(0).backgroundColor(Color.Transparent)
+              .accessibilityText('取消下载').onClick(() => { this.execute(async () => { await this.downloads.cancel(episode.id); }); })
+          } else if (this.downloaded.some((entry: DownloadEntry) => entry.id === episode.id)) {
+            Image($r('app.media.download_complete')).width(44).height(44).padding(11).accessibilityText('已下载')
+          } else {
+            Button({ type: ButtonType.Normal }) {
+              Image($r('app.media.download_start')).width(22).height(22)
+            }.width(44).height(44).padding(0).backgroundColor(Color.Transparent)
+              .accessibilityText('下载视频').onClick(() => { this.execute(async () => { await this.downloads.start(episode); }); })
+          }
         }.width('100%').padding(16).backgroundColor(Color.White)
         Divider().color('#EEEEEE')
       })

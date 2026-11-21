@@ -112,7 +112,10 @@ struct SeriesView: View {
     @ViewBuilder func downloadButton(_ item: JSON) -> some View {
         let videoID = item["id"] as? Int ?? 0
         if downloads.running.contains(videoID) { Button { downloads.cancel(videoID) } label: { Image(systemName: "xmark.circle").frame(width: 44, height: 44) }.buttonStyle(.borderless).accessibilityLabel("取消下载") }
-        else if downloads.localURL(videoID) != nil { Text("已下载").font(.caption).foregroundColor(.teal) }
+        else if downloads.localURL(videoID) != nil {
+            Image(systemName: "checkmark.circle").foregroundColor(.teal)
+                .frame(width: 44, height: 44).accessibilityLabel("已下载")
+        }
         else { Button { downloads.start(item) } label: { Image(systemName: "arrow.down.circle").frame(width: 44, height: 44) }.buttonStyle(.borderless).accessibilityLabel("下载视频") }
         if let error = downloads.errors[videoID] { Text(error).font(.caption).foregroundColor(.red) }
     }

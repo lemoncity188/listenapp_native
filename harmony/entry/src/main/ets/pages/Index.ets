@@ -1,3 +1,4 @@
+import { ListeningPlayer } from '../model/ListeningPlayer';
 import { common } from '@kit.AbilityKit';
 import { Api, AuthBody, MobileBody, FeedbackBody, RemoveBody, encrypt } from '../model/Api';
 import { User, Course, Category, Study, Segment, Records, CategoryBody, CategoryIDBody, IDBody, KindBody, CurriculumIDBody, ThumbBody, CollectionBody, SpecializeBody, SaveRecordsBody, VIPBody, courseTitle, boundedSeek, validSegment, toggleActive, activeAfterDelete } from '../model/Models';
@@ -9,7 +10,8 @@ import { privacyText } from '../model/Privacy';
 struct Index {
   private api: Api = new Api();
   private downloads: Downloads = new Downloads();
-  private controller: VideoController = new VideoController();
+  private controller: ListeningPlayer = new ListeningPlayer();
+  private surface: XComponentController = new XComponentController();
   private seekUntil: number = 0;
   private countdownTimer: number = -1;
   @State repeatPassword: string = '';
@@ -47,7 +49,7 @@ struct Index {
   @State playhead: number = 0;
   @State duration: number = 0;
   @State playing: boolean = false;
-  @State speed: number = 1;
+
   @State abMode: boolean = false;
   @State segments: Segment[] = [];
   @State active: number = -1;
@@ -57,6 +59,19 @@ struct Index {
   @State runningIDs: number[] = [];
   @State progressLabel: string = '';
   aboutToAppear(): void {
+    this.controller.onStep = (direction: number) => { this.stepSegment(direction); };
+    this.controller.onDuration = (duration: number) => { this.duration = duration; };
+    this.controller.onPlaying = (playing: boolean) => { this.playing = playing; };
+    this.controller.onError = (message: string) => { this.notice = message; };
+    this.controller.onEnd = () => { if (this.active >= 0) { this.seek(this.segments[this.active].APos); this.controller.start(); } };
+    this.controller.onTime = (seconds: number) => {
+      if (Date.now() < this.seekUntil) { return; }
+      this.playhead = seconds;
+      if (this.playing && this.active >= 0 && seconds >= this.segments[this.active].BPos) { this.seek(this.segments[this.active].APos); }
+    };
+    this.restoreSession();
+  }
+  restoreSession(): void {
     this.execute(async () => {
       const context = getContext(this) as common.UIAbilityContext;
       await this.api.init(context); this.server = this.api.baseURL;
@@ -65,15 +80,15 @@ struct Index {
         this.progressLabel = this.runningIDs.map((id: number) => id + ': ' + this.downloads.progress.get(id) + '%').join(' · ');
       };
       this.downloads.onError = (message: string) => { this.notice = message; };
-      this.downloads.init(context); this.downloads.onChange(); this.ready = true;
+      this.downloads.init(context); this.downloads.onChange(); this.loggedIn = this.api.token.length > 0; this.ready = true;
       if (this.api.token) { this.user = await this.api.post<User>('user/info'); this.categories = await this.api.post<Category[]>('dict/selectByKind', new KindBody()); }
     });
   }
-  aboutToDisappear(): void { clearInterval(this.countdownTimer); if (this.videoURL) { this.controller.pause(); } }
+  aboutToDisappear(): void { clearInterval(this.countdownTimer); this.controller.close(); }
   async execute(work: () => Promise<void>): Promise<void> {
     if (this.busy) { return; } this.busy = true; this.notice = '';
     try { await work(); } catch (error) { this.notice = (error as Error).message || '操作失败，请重试'; }
-    finally { this.loggedIn = this.api.token.length > 0; if (!this.loggedIn && this.videoURL) { this.controller.pause(); this.videoURL = ''; } this.busy = false; }
+    finally { this.loggedIn = this.api.token.length > 0; if (!this.loggedIn && this.videoURL) { this.controller.close(); this.videoURL = ''; } this.busy = false; }
   }
   async authenticate(): Promise<void> {
     if (!/^\d{11}$/.test(this.mobile) || this.password.length < 6) { throw new Error('请输入11位手机号和至少6位密码'); }
@@ -124,6 +139,18 @@ struct Index {
     this.active = selected ? this.segments.findIndex((s: Segment) => s.APos === selected.APos && s.BPos === selected.BPos) : -1; this.pendingA = -1;
   }
   select(index: number): void { this.active = toggleActive(this.active, index, this.segments.length); if (this.active >= 0) { this.seek(this.segments[this.active].APos); this.controller.start(); } }
+  stepSegment(direction: number): void {
+    let index = this.active + direction;
+    if (this.active < 0) {
+      if (direction > 0) {
+        index = this.segments.findIndex((segment: Segment) => segment.APos >= this.playhead);
+      } else {
+        index = this.segments.length - 1;
+        while (index >= 0 && this.segments[index].APos >= this.playhead) { index--; }
+      }
+    }
+    if (index >= 0 && index < this.segments.length) { this.select(index); }
+  }
   remove(index: number): void { this.segments = this.segments.filter((s: Segment, i: number) => i !== index); this.active = activeAfterDelete(this.active, index); }
   async saveRecords(): Promise<void> {
     if (!this.recordsReady) { throw new Error('请先成功加载云端记录'); }
@@ -131,7 +158,7 @@ struct Index {
     await this.api.post<Object>('curriculumUserRecord/insertOrUpdate', body); this.notice = 'AB记录已保存';
   }
   clear(): void { this.api.token = ''; this.loggedIn = false; this.user = { userId: 0, username: '', vip: 0 }; this.categories = []; this.courses = []; this.episodes = []; this.segments = []; this.study = {}; this.page = 'home'; }
-  back(): void { if (this.page === 'player') { this.controller.pause(); this.videoURL = ''; this.page = this.playerReturn; } else { this.page = this.page === 'series' ? this.seriesReturn : this.page === 'downloads' ? 'study' : 'home'; } }
+  back(): void { if (this.page === 'player') { this.controller.close(); this.videoURL = ''; this.page = this.playerReturn; } else { this.page = this.page === 'series' ? this.seriesReturn : this.page === 'downloads' ? 'study' : 'home'; } }
   @Builder
   authView() {
     Column({ space: 16 }) {
@@ -256,12 +283,12 @@ struct Index {
     Column({ space: 0 }) {
       Text('‹ 返回').fontSize(14).fontColor('#26A69A').width('100%').padding(8).onClick(() => { this.back(); })
       if (this.videoURL) {
-        Video({ src: this.videoURL, controller: this.controller, currentProgressRate: this.speed }).width('100%').height(230).autoPlay(false).controls(false)
-          .onPrepared((event) => { if (event) { this.duration = event.duration; } })
-          .onStart(() => { this.playing = true; }).onPause(() => { this.playing = false; })
-          .onFinish(() => { if (this.active >= 0) { this.seek(this.segments[this.active].APos); this.controller.start(); } else { this.playing = false; } })
-          .onError(() => { this.playing = false; this.notice = '视频播放失败，请检查网络后重试'; })
-          .onUpdate((event) => { if (event && Date.now() >= this.seekUntil) { this.playhead = event.time; if (this.playing && this.active >= 0 && this.playhead >= this.segments[this.active].BPos) { this.seek(this.segments[this.active].APos); } } })
+        XComponent({ id: 'listeningSurface', type: XComponentType.SURFACE, controller: this.surface })
+          .width('100%').height(230).backgroundColor(Color.Black)
+          .onLoad(() => {
+            this.controller.open(getContext(this) as common.UIAbilityContext, this.videoURL,
+              this.surface.getXComponentSurfaceId(), courseTitle(this.detail), this.detail.id);
+          })
       }
 
       Row({ space: 4 }) {
@@ -288,8 +315,8 @@ struct Index {
           Button({ type: ButtonType.Normal }) { Image($r('app.media.control_back5')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.seek(this.playhead - 5); })
           Button({ type: ButtonType.Normal }) { Image($r('app.media.control_forward5')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.seek(this.playhead + 5); })
           Button({ type: ButtonType.Normal }) { Image(this.playing ? $r('app.media.control_pause') : $r('app.media.control_play')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.playing) { this.controller.pause(); } else { this.controller.start(); } })
-          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_previous')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.active > 0) { this.select(this.active - 1); } })
-          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_next')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.active >= 0 && this.active + 1 < this.segments.length) { this.select(this.active + 1); } })
+          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_previous')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.stepSegment(-1); })
+          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_next')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.stepSegment(1); })
       Button({ type: ButtonType.Normal }) { Image($r('app.media.control_fire')).width(24).height(24).fillColor(this.detail.specialize === 0 ? '#26A69A' : '#888888') }.backgroundColor(Color.White).fontColor(this.detail.specialize === 0 ? '#26A69A' : '#888888').layoutWeight(1).onClick(() => { this.execute(async () => {
         const body = new SpecializeBody(); body.curriculumId = this.detail.id; body.specialize = (this.detail.specialize ?? 1) === 0 ? 1 : 0; await this.api.post<Object>('curriculumUserDaydayuse/specialize', body); this.detail.specialize = body.specialize; this.notice = '操作成功';
       }); })
@@ -407,7 +434,8 @@ struct Index {
         } else {
         Scroll() {
           Column() {
-            if (!this.loggedIn) { this.authView() }
+            if (!this.ready) { if (!this.busy) { Button('重试').onClick(() => { this.restoreSession(); }) } }
+            else if (!this.loggedIn) { this.authView() }
             else if (this.page === 'home') { this.homeView() }
             else if (this.page === 'catalog') { this.catalogView() }
             else if (this.page === 'series') { this.seriesView() }
@@ -415,7 +443,7 @@ struct Index {
             else if (this.page === 'study') { this.studyView() }
             else if (this.page === 'downloads') { this.downloadsView() }
             else { this.profileView() }
-          }.width('100%').enabled(this.ready && !this.busy)
+          }.width('100%').enabled(!this.busy)
         }.layoutWeight(1).width('100%').align(Alignment.TopStart)
         }
         if (this.loggedIn && ['home', 'study', 'profile'].includes(this.page)) {

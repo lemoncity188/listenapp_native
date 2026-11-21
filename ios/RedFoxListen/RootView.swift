@@ -166,8 +166,8 @@ struct PlayerView: View {
                     control("清空记录", "trash") { deleting = true }
                 } else {
                     control(playback.playing ? "暂停" : "播放", playback.playing ? "pause.fill" : "play.fill") { playback.toggle() }
-                    control("上一段", "backward.end.fill") { if let n = playback.active, n > 0 { playback.select(n - 1) } }
-                    control("下一段", "forward.end.fill") { if let n = playback.active, n + 1 < playback.segments.count { playback.select(n + 1) } }
+                    control("上一段", "backward.end.fill") { playback.stepSegment(-1) }
+                    control("下一段", "forward.end.fill") { playback.stepSegment(1) }
                     control("精听", "flame.fill") { session.run {
                         let value = (playback.detail["specialize"] as? Int ?? 1) == 0 ? 1 : 0
                         _ = try await session.post("curriculumUserDaydayuse/specialize", ["curriculumId": id, "specialize": value])

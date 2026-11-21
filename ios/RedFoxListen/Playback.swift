@@ -56,7 +56,16 @@ import MediaPlayer
         let center = MPRemoteCommandCenter.shared()
         let play = center.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.player.playImmediately(atRate: self?.rate ?? 1) }; return .success }
         let pause = center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.player.pause() }; return .success }
-        remoteTargets = [(center.playCommand, play), (center.pauseCommand, pause)]
+        let previous = center.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.stepSegment(-1) }
+            return .success
+        }
+        let next = center.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.stepSegment(1) }
+            return .success
+        }
+        remoteTargets = [(center.playCommand, play), (center.pauseCommand, pause),
+                         (center.previousTrackCommand, previous), (center.nextTrackCommand, next)]
     }
     func updateNowPlaying() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: detail["curriculumName"] as? String ?? "红狐听力", MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position, MPNowPlayingInfoPropertyPlaybackRate: player.rate]
@@ -81,6 +90,13 @@ import MediaPlayer
         guard segments.indices.contains(index) else { return }
         if active == index { active = nil; return }
         active = index; seek(segments[index].APos); player.playImmediately(atRate: rate)
+    }
+    func stepSegment(_ direction: Int) {
+        let target: Int?
+        if let active { target = active + direction }
+        else if direction > 0 { target = segments.firstIndex { $0.APos >= position } }
+        else { target = segments.lastIndex { $0.APos < position } }
+        if let target, segments.indices.contains(target) { select(target) }
     }
     func remove(_ index: Int) {
         guard segments.indices.contains(index) else { return }

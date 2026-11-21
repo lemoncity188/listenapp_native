@@ -1,0 +1,19 @@
+name: RedFoxListen
+options:
+  bundleIdPrefix: com.redfox.listen
+  deploymentTarget:
+    iOS: '16.0'
+targets:
+  RedFoxListen:
+    type: application
+    platform: iOS
+    sources: [RedFoxListen]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.redfox.listen.native
+        SWIFT_VERSION: '5.0'
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: RedFoxListen/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: 红狐听力
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: '1,2'

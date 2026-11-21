@@ -1,4 +1,4 @@
-export interface User { userId: number; username: string; vip: number; avatar?: string; }
+export interface User { name?: string; userId: number; username: string; vip: number; avatar?: string; }
 export interface Category { id: number; code: string; desc: string; img?: string; }
 export interface Course { id: number; curriculumName?: string; categoryName?: string; poster?: string; thumbnail?: string; url?: string; videoUrl?: string; categoryId?: number; thumbUp?: number; collection?: number; specialize?: number; curriculumDesc?: string; desc?: string; }
 export interface Study { curriculumList?: Course[]; categoryList?: Course[]; }

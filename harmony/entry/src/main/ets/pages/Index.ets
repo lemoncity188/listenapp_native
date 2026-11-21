@@ -15,6 +15,7 @@ struct Index {
   @State repeatPassword: string = '';
   @State countdown: number = 0;
   @State privacyRegistration: boolean = false;
+  private seriesReturn: string = 'catalog';
   private playerReturn: string = 'series';
   @State ready: boolean = false;
   @State loggedIn: boolean = false;
@@ -94,12 +95,12 @@ struct Index {
     this.courses = await this.api.post<Course[]>('category/selectByCategoryNo', body); this.page = 'catalog';
   }
   async openSeries(course: Course): Promise<void> {
-    if (this.user.vip === 0 && course.id !== 3) { this.showingVIP = true; return; }
+    if (this.page === 'catalog' && this.user.vip === 0 && course.id !== 3) { this.page = 'profile'; return; }
     const body = new CategoryIDBody(); body.categoryId = course.id;
-    this.episodes = await this.api.post<Course[]>('curriculum/selectByCategoryId', body); this.seriesTitle = courseTitle(course); this.page = 'series';
+    this.episodes = await this.api.post<Course[]>('curriculum/selectByCategoryId', body); this.seriesReturn = this.page; this.seriesTitle = courseTitle(course); this.page = 'series';
   }
   async openPlayer(id: number): Promise<void> {
-    const previous = this.page; this.videoURL = ''; this.playhead = 0; this.duration = 0; this.playing = false; this.active = -1; this.pendingA = -1; this.recordsReady = false; this.segments = [];
+    const previous = this.page; this.abMode = false; this.videoURL = ''; this.playhead = 0; this.duration = 0; this.playing = false; this.active = -1; this.pendingA = -1; this.recordsReady = false; this.segments = [];
     const local = this.downloads.localPath(id);
     if (local) {
       const cached = this.downloaded.find((entry: DownloadEntry) => entry.id === id);
@@ -130,7 +131,7 @@ struct Index {
     await this.api.post<Object>('curriculumUserRecord/insertOrUpdate', body); this.notice = 'AB记录已保存';
   }
   clear(): void { this.api.token = ''; this.loggedIn = false; this.user = { userId: 0, username: '', vip: 0 }; this.categories = []; this.courses = []; this.episodes = []; this.segments = []; this.study = {}; this.page = 'home'; }
-  back(): void { if (this.page === 'player') { this.controller.pause(); this.videoURL = ''; this.page = this.playerReturn; } else { this.page = this.page === 'series' ? 'catalog' : 'home'; } }
+  back(): void { if (this.page === 'player') { this.controller.pause(); this.videoURL = ''; this.page = this.playerReturn; } else { this.page = this.page === 'series' ? this.seriesReturn : this.page === 'downloads' ? 'study' : 'home'; } }
   @Builder
   authView() {
     Column({ space: 16 }) {
@@ -142,7 +143,7 @@ struct Index {
         TextInput({ placeholder: '确认密码', text: this.repeatPassword }).height(48).borderRadius(6).type(InputType.Password).onChange((v: string) => { this.repeatPassword = v; })
         Row({ space: 8 }) {
           TextInput({ placeholder: '验证码', text: this.code }).layoutWeight(1).onChange((v: string) => { this.code = v; })
-          Button(this.countdown > 0 ? this.countdown + '秒后重试' : '发送验证码', { type: ButtonType.Normal }).height(40).fontSize(14).padding({ left: 14, right: 14 }).enabled(this.countdown === 0).backgroundColor('#EAF6F3').fontColor('#287F73').borderRadius(10).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => {
+          Button(this.countdown > 0 ? this.countdown + '秒后重试' : '发送验证码', { type: ButtonType.Normal }).height(40).fontSize(14).padding({ left: 14, right: 14 }).enabled(this.countdown === 0).backgroundColor('#EAF6F3').fontColor('#287F73').borderRadius(10).onClick(() => { this.execute(async () => {
             if (!/^\d{11}$/.test(this.mobile)) { throw new Error('请输入11位手机号'); }
             const body = new MobileBody(); body.mobile = await encrypt(this.mobile);
             await this.api.post<Object>('user/sendCode', body);
@@ -152,7 +153,7 @@ struct Index {
           }); })
         }
       }
-      Button(this.authMode === 0 ? '登陆' : this.authMode === 1 ? '注册' : '修改密码').width('100%').height(48).borderRadius(4).backgroundColor('#26A69A').margin({ top: 16 }).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.authenticate(); }); })
+      Button(this.authMode === 0 ? '登陆' : this.authMode === 1 ? '注册' : '修改密码').width('100%').height(48).borderRadius(4).backgroundColor('#26A69A').margin({ top: 16 }).fontColor(Color.White).onClick(() => { this.execute(async () => { await this.authenticate(); }); })
       if (this.authMode === 0) {
         Text('立即注册').fontSize(14).fontColor('#666666').margin({ top: 14 }).onClick(() => { this.privacyRegistration = true; this.showingPrivacy = true; })
         Text('忘记密码').fontSize(14).fontColor('#666666').margin({ top: 14 }).onClick(() => { this.authMode = 2; })
@@ -160,6 +161,21 @@ struct Index {
     }.padding({ left: 40, right: 40, top: 40, bottom: 40 }).width('100%').constraintSize({ minHeight: '90%' }).justifyContent(FlexAlign.Center)
   }
 
+  categoryImage(name: string): Resource {
+    switch (name.toLowerCase()) {
+      case 'news': return $r('app.media.icon_news');
+      case 'documentary': return $r('app.media.icon_documentary');
+      case 'talkshow': return $r('app.media.icon_talkshow');
+      case 'action': return $r('app.media.icon_action');
+      case 'animation': return $r('app.media.icon_animation');
+      case 'detective': return $r('app.media.icon_detective');
+      case 'live': return $r('app.media.icon_live');
+      case 'moive': return $r('app.media.icon_moive');
+      case 'speech': return $r('app.media.icon_speech');
+      case 'blog': return $r('app.media.icon_blog');
+      default: return $r('app.media.icon_home');
+    }
+  }
   @Builder
   homeView() {
     Column({ space: 16 }) {
@@ -171,7 +187,7 @@ struct Index {
         ForEach(this.categories, (category: Category) => {
           Column() {
             Column({ space: 6 }) {
-              Text(category.img === 'news' ? '▤' : category.img === 'documentary' ? '⚗' : '◈').fontSize(22).fontColor('#26A69A').width(56).height(56).textAlign(TextAlign.Center).backgroundColor('#E9F6F4').borderRadius(16)
+              Image(this.categoryImage(category.img || '')).width(56).height(56).padding(13).backgroundColor('#E9F6F4').borderRadius(16)
               Text(category.desc).fontSize(13).fontColor('#333333')
             }.width('100%').padding(8).onClick(() => { this.search = ''; this.execute(async () => { await this.openCatalog(category.code); }); })
           }
@@ -183,12 +199,11 @@ struct Index {
   @Builder
   catalogView() {
     Column({ space: 16 }) {
-      Text('课程').fontSize(20).fontWeight(FontWeight.Medium).width('100%').textAlign(TextAlign.Start)
       Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
       ForEach(this.courses, (course: Course, index: number) => {
         Column() {
         Column({ space: 6 }) {
-          if (course.poster) { Image(course.poster).height(160).width('100%').objectFit(ImageFit.Contain) }
+          if (course.poster) { Image(course.poster).height(180).width('100%').objectFit(ImageFit.Contain).onClick(() => { this.execute(async () => { await this.openSeries(course); }); }) }
           Text(courseTitle(course) + (this.user.vip === 0 && course.id !== 3 ? ' 🔒' : '')).fontSize(14).fontColor('#333333').maxLines(2).onClick(() => { this.execute(async () => { await this.openSeries(course); }); })
           Row({ space: 16 }) {
             Text(course.thumbUp === 0 ? '♥ 已赞' : '♡ 赞').fontSize(13).fontColor('#26A69A').onClick(() => { this.execute(async () => {
@@ -209,13 +224,12 @@ struct Index {
   @Builder
   seriesView() {
     Column({ space: 0 }) {
-      Text(this.seriesTitle).fontSize(20).fontWeight(FontWeight.Medium).padding(16)
       ForEach(this.episodes, (episode: Course, index: number) => {
         Row({ space: 12 }) {
           if (episode.thumbnail) { Image(episode.thumbnail).width(56).height(56).objectFit(ImageFit.Contain) }
           Column({ space: 6 }) {
           Text(courseTitle(episode) + (this.user.vip === 0 && index >= 10 ? ' 🔒' : '')).fontSize(16).fontColor('#26A69A').width('100%').onClick(() => {
-            if (this.user.vip === 0 && index >= 10) { this.showingVIP = true; } else { this.execute(async () => { await this.openPlayer(episode.id); }); }
+            if (this.user.vip === 0 && index >= 10) { this.page = 'profile'; } else { this.execute(async () => { await this.openPlayer(episode.id); }); }
           })
           Text(episode.curriculumDesc || episode.desc || '').fontSize(13).fontColor('#777777').maxLines(2)
           }.layoutWeight(1).alignItems(HorizontalAlign.Start)
@@ -244,26 +258,28 @@ struct Index {
         Slider({ value: this.playhead, min: 0, max: Math.max(1, this.duration), step: 0.1 }).layoutWeight(1).selectedColor('#26A69A').onChange((value: number, mode: SliderChangeMode) => { if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) { this.seek(value); } })
         Text(this.clockTime(this.duration)).fontSize(12).fontColor('#888888').width(40)
       }.padding(8)
+      Scroll() {
       Flex({ wrap: FlexWrap.Wrap }) {
+        if (!this.segments.length) { Text('暂无记录').fontSize(12).fontColor('#888888').padding(8) }
         ForEach(this.segments, (segment: Segment, index: number) => {
           Column({ space: 2 }) {
-            Image($r('app.media.control_heart')).width(24).height(24).opacity(this.active === index ? 1 : 0.5)
+            Image($r('app.media.control_heart')).width(24).height(24).fillColor(this.active === index ? '#26A69A' : '#C7C7C7')
             Text((index + 1).toString()).fontSize(10).fontColor('#999999')
           }.padding(4).onClick(() => { this.select(index); }).gesture(LongPressGesture().onAction(() => {
             AlertDialog.show({ title: '确认删除', message: '确定要删除这条记录么？', primaryButton: { value: '取消', action: () => {} }, secondaryButton: { value: '确定', action: () => { this.remove(index); } } });
           }))
         })
       }.width('100%').padding(8)
-      if (!this.segments.length) { Text('暂无记录').fontSize(12).fontColor('#CCCCCC').width('100%').padding(8) }
-      Blank().layoutWeight(1)
+
+      }.layoutWeight(1).width('100%').align(Alignment.TopStart)
       Row() {
         if (!this.abMode) {
           Button({ type: ButtonType.Normal }) { Image($r('app.media.control_back5')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.seek(this.playhead - 5); })
           Button({ type: ButtonType.Normal }) { Image($r('app.media.control_forward5')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { this.seek(this.playhead + 5); })
           Button({ type: ButtonType.Normal }) { Image(this.playing ? $r('app.media.control_pause') : $r('app.media.control_play')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.playing) { this.controller.pause(); } else { this.controller.start(); } })
           Button({ type: ButtonType.Normal }) { Image($r('app.media.control_previous')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.active > 0) { this.select(this.active - 1); } })
-          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_next')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.active + 1 < this.segments.length) { this.select(this.active + 1); } })
-      Button({ type: ButtonType.Normal }) { Image($r('app.media.control_fire')).width(24).height(24) }.backgroundColor(Color.White).fontColor(this.detail.specialize === 0 ? '#26A69A' : '#888888').layoutWeight(1).onClick(() => { this.execute(async () => {
+          Button({ type: ButtonType.Normal }) { Image($r('app.media.control_next')).width(24).height(24) }.backgroundColor(Color.White).fontColor('#888888').fontSize(20).height(44).layoutWeight(1).onClick(() => { if (this.active >= 0 && this.active + 1 < this.segments.length) { this.select(this.active + 1); } })
+      Button({ type: ButtonType.Normal }) { Image($r('app.media.control_fire')).width(24).height(24).fillColor(this.detail.specialize === 0 ? '#26A69A' : '#888888') }.backgroundColor(Color.White).fontColor(this.detail.specialize === 0 ? '#26A69A' : '#888888').layoutWeight(1).onClick(() => { this.execute(async () => {
         const body = new SpecializeBody(); body.curriculumId = this.detail.id; body.specialize = (this.detail.specialize ?? 1) === 0 ? 1 : 0; await this.api.post<Object>('curriculumUserDaydayuse/specialize', body); this.detail.specialize = body.specialize; this.notice = '操作成功';
       }); })
 
@@ -285,20 +301,39 @@ struct Index {
   }
   clockTime(value: number): string { return Math.floor(value / 60) + ':' + Math.floor(value % 60).toString().padStart(2, '0'); }
   @Builder
+  menuRow(label: string, action: () => void) {
+    Row({ space: 12 }) {
+      Text(label).fontSize(15).fontColor('#444444').layoutWeight(1)
+      Text('›').fontSize(20).fontColor('#999999')
+    }.width('100%').constraintSize({ minHeight: 52 }).padding({ left: 16, right: 16 }).onClick(action)
+    Divider().color('#EEEEEE')
+  }
+  @Builder
   studyView() {
-    Column({ space: 16 }) {
-      Text('我的学习').fontSize(22)
-      Button('刷新').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { this.study = await this.api.post<Study>('study/list'); }); })
-      Text('精听课程').fontSize(22)
-      ForEach(this.study.curriculumList ?? [], (course: Course) => { Button(courseTitle(course)).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.openPlayer(course.id); }); }) })
-      Text('收藏专辑').fontSize(22)
-      ForEach(this.study.categoryList ?? [], (course: Course) => { Button(courseTitle(course)).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.openSeries(course); }); }) })
-    }.padding(16).width('100%').alignItems(HorizontalAlign.Start)
+    Column({ space: 8 }) {
+      Column({ space: 4 }) {
+        Text('今天').fontSize(14).fontColor(Color.White)
+        Text(new Date().toLocaleDateString('zh-CN')).fontSize(18).fontColor(Color.White).fontWeight(FontWeight.Bold)
+      }.width('100%').alignItems(HorizontalAlign.Start).padding(20).backgroundColor('#258F85').borderRadius(12)
+      if (this.study.curriculumList?.length) {
+        Text('专注').fontWeight(FontWeight.Bold).fontSize(17)
+        ForEach(this.study.curriculumList, (course: Course) => {
+          this.menuRow(courseTitle(course), () => { this.execute(async () => { await this.openPlayer(course.id); }); })
+        })
+      }
+      if (this.study.categoryList?.length) {
+        Text('收藏').fontWeight(FontWeight.Bold).fontSize(17)
+        ForEach(this.study.categoryList, (course: Course) => {
+          this.menuRow(courseTitle(course), () => { this.execute(async () => { await this.openSeries(course); }); })
+        })
+      }
+      this.menuRow('离线视频', () => { this.page = 'downloads'; })
+    }.width('100%').alignItems(HorizontalAlign.Start).padding(16)
   }
   @Builder
   downloadsView() {
     Column({ space: 16 }) {
-      Text('离线视频').fontSize(22); Text(this.progressLabel)
+      if (this.progressLabel) { Text(this.progressLabel) }
       ForEach(this.runningIDs, (id: number) => { Button('视频 ' + id + ' 下载中，点击取消').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.downloads.cancel(id); }); }) })
       ForEach(this.downloaded, (entry: DownloadEntry) => {
         Row() { Button(entry.name).layoutWeight(1).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { await this.openPlayer(entry.id); }); }); Button('删除本地视频').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { this.downloads.remove(entry.id); }); }) }
@@ -308,31 +343,32 @@ struct Index {
   }
   @Builder
   profileView() {
-    Column({ space: 16 }) {
+    Column({ space: 0 }) {
       Row({ space: 16 }) {
         Image(this.user.avatar || 'https://lemoncity.oss-cn-shanghai.aliyuncs.com/avatar/avater01.png').width(60).height(60).borderRadius(30)
         Column({ space: 6 }) {
-          Text(this.user.username || '我的账号').fontSize(16).fontWeight(FontWeight.Bold)
+          Text(this.user.name || this.user.username || '我的账号').fontSize(16).fontWeight(FontWeight.Bold)
           Text(this.user.vip === 0 ? '普通用户' : 'VIP').fontSize(14).fontColor(this.user.vip === 0 ? '#888888' : '#C4A25C')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1)
         if (this.user.vip !== 0) { Text('VIP').fontWeight(FontWeight.Bold).fontColor('#C4A25C') }
       }.padding(16).width('100%')
-      Text('建 议                                      ›').fontSize(14).fontColor('#888888').width('100%').padding(20).onClick(() => { this.editingFeedback = !this.editingFeedback; })
+      this.menuRow('建议', () => { this.editingFeedback = !this.editingFeedback; })
       Divider().color('#EEEEEE')
       if (this.editingFeedback) {
       TextArea({ placeholder: '建议与反馈', text: this.feedback }).onChange((v: string) => { this.feedback = v; })
-      Button('提交反馈').enabled(this.feedback.trim().length > 0).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { const body = new FeedbackBody(); body.userId = this.user.userId; body.content = this.feedback; await this.api.post<Object>('suggest/insert', body); this.feedback = ''; this.notice = '感谢反馈'; }); })
+      Button('提交反馈').enabled(this.feedback.trim().length > 0).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { const body = new FeedbackBody(); body.userId = this.user.userId; body.content = this.feedback; await this.api.post<Object>('suggest/insert', body); this.feedback = ''; this.editingFeedback = false; this.notice = '感谢反馈'; }); })
       }
       if (this.user.vip === 8) {
-        Text('设置vip                                  ›').fontSize(14).fontColor('#888888').width('100%').padding(20).onClick(() => { this.editingVIP = !this.editingVIP; })
+        this.menuRow('设置 VIP', () => { this.editingVIP = !this.editingVIP; })
         if (this.editingVIP) {
         TextInput({ placeholder: '会员用户名', text: this.vipUser }).onChange((v: string) => { this.vipUser = v; })
         Button('设置会员').enabled(this.vipUser.trim().length > 0).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.execute(async () => { const body = new VIPBody(); body.username = this.vipUser; await this.api.post<Object>('user/setting/vip', body); this.notice = '操作成功'; }); })
       }
         }
-      Button('隐私政策').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.privacyRegistration = false; this.showingPrivacy = true; })
-      Button('登出                                      ›', { type: ButtonType.Normal }).width('100%').height(52).backgroundColor(Color.White).fontColor('#888888').onClick(() => { this.execute(async () => { await this.api.post<Object>('user/logout'); await this.api.saveToken(''); this.clear(); }); })
-      Button('注销用户                                ›', { type: ButtonType.Normal }).width('100%').height(52).backgroundColor(Color.White).fontColor('#888888').onClick(() => { AlertDialog.show({ title: '注销账号', message: '注销将删除账号，是否继续？', primaryButton: { value: '取消', action: () => {} }, secondaryButton: { value: '确认注销', action: () => { this.execute(async () => { const body = new RemoveBody(); body.id = this.user.userId; await this.api.post<Object>('user/removal', body); await this.api.saveToken(''); this.clear(); }); } } }); })
+      this.menuRow('会员说明', () => { this.showingVIP = true; })
+      this.menuRow('隐私政策', () => { this.privacyRegistration = false; this.showingPrivacy = true; })
+      this.menuRow('登出', () => { this.execute(async () => { await this.api.post<Object>('user/logout'); await this.api.saveToken(''); this.clear(); }); })
+      this.menuRow('注销用户', () => { AlertDialog.show({ title: '注销账号', message: '注销将删除账号，是否继续？', primaryButton: { value: '取消', action: () => {} }, secondaryButton: { value: '确认注销', action: () => { this.execute(async () => { const body = new RemoveBody(); body.id = this.user.userId; await this.api.post<Object>('user/removal', body); await this.api.saveToken(''); this.clear(); }); } } }); })
     }.padding(16).width('100%').alignItems(HorizontalAlign.Start)
   }
   build() {
@@ -342,11 +378,19 @@ struct Index {
         if (this.privacyRegistration) { Button('同意并注册').backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.agreed = true; this.authMode = 1; this.showingPrivacy = false; this.privacyRegistration = false; }) }
       } else if (this.showingVIP) {
         Button('‹ 返回', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor('#26A69A').height(44).onClick(() => { this.showingVIP = false; })
-        Scroll() { Column({ space: 24 }) { Text('支付宝二维码').fontSize(24); Image('https://lemoncity.oss-cn-shanghai.aliyuncs.com/zhifubao/zhifubao.png').width(250).height(250).objectFit(ImageFit.Contain); Text('请在支付备注里面填写用户名，一个工作日左右开通'); Text('听力年度VIP ¥88\n听力与单词年度双VIP ¥158'); Text('以上说明沿用原Android项目') }.padding(24) }.layoutWeight(1)
+        Scroll() { Column({ space: 24 }) { Text('支付宝二维码').fontSize(24); Image('https://lemoncity.oss-cn-shanghai.aliyuncs.com/zhifubao/zhifubao.png').width(250).height(250).objectFit(ImageFit.Contain); Text('请在支付备注里面填写用户名，一个工作日左右开通'); Text('听力年度VIP ¥88\n听力与单词年度双VIP ¥158') }.padding(24) }.layoutWeight(1)
       } else {
         if (this.notice) { Text(this.notice).fontColor('#A33E32').padding(12).width('100%') }
         if (this.busy) { LoadingProgress().width(32).height(32) }
-        if (this.loggedIn && ['catalog', 'series'].includes(this.page)) { Button('‹ 返回', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor('#26A69A').height(44).enabled(!this.busy).backgroundColor('#E9F6F4').fontColor('#238E83').borderRadius(10).onClick(() => { this.back(); }) }
+        if (this.loggedIn && ['catalog', 'series', 'downloads'].includes(this.page)) {
+          Row({ space: 8 }) {
+            Text('‹').fontSize(30).width(44).height(44).textAlign(TextAlign.Center)
+              .accessibilityText('返回').onClick(() => { this.back(); })
+            Text(this.page === 'series' ? this.seriesTitle : this.page === 'catalog' ? '课程' : '离线视频')
+              .fontSize(18).fontWeight(FontWeight.Medium).maxLines(2).layoutWeight(1)
+          }.width('100%').padding({ right: 16 }).enabled(!this.busy)
+          Divider().color('#EEEEEE')
+        }
         if (this.loggedIn && this.page === 'player') {
           Column() { this.playerView() }.layoutWeight(1).width('100%')
         } else {
@@ -363,12 +407,21 @@ struct Index {
           }.width('100%').enabled(this.ready && !this.busy)
         }.layoutWeight(1).width('100%').align(Alignment.TopStart)
         }
-        if (this.loggedIn && this.page !== 'player') {
+        if (this.loggedIn && ['home', 'study', 'profile'].includes(this.page)) {
           Row({ space: 4 }) {
-            Button('发现', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor(this.page === 'home' ? '#26A69A' : '#888888').fontSize(13).height(48).layoutWeight(1).onClick(() => { this.page = 'home'; })
-            Button('学习', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor(this.page === 'study' ? '#26A69A' : '#888888').fontSize(13).height(48).layoutWeight(1).onClick(() => { this.page = 'study'; this.execute(async () => { this.study = await this.api.post<Study>('study/list'); }); })
-            Button('下载', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor(this.page === 'downloads' ? '#26A69A' : '#888888').fontSize(13).height(48).layoutWeight(1).onClick(() => { this.page = 'downloads'; })
-            Button('我的', { type: ButtonType.Normal }).backgroundColor(Color.White).fontColor(this.page === 'profile' ? '#26A69A' : '#888888').fontSize(13).height(48).layoutWeight(1).onClick(() => { this.page = 'profile'; this.execute(async () => { this.user = await this.api.post<User>('user/info'); }); })
+            Column({ space: 2 }) {
+              Image($r('app.media.icon_home')).width(23).height(23).fillColor(this.page === 'home' ? '#26A69A' : '#777777')
+              Text('类目').fontSize(12).fontColor(this.page === 'home' ? '#238E83' : '#777777')
+            }.height(48).justifyContent(FlexAlign.Center).layoutWeight(1).onClick(() => { this.page = 'home'; })
+            Column({ space: 2 }) {
+              Image($r('app.media.icon_blog')).width(23).height(23).fillColor(this.page === 'study' ? '#26A69A' : '#777777')
+              Text('学习').fontSize(12).fontColor(this.page === 'study' ? '#238E83' : '#777777')
+            }.height(48).justifyContent(FlexAlign.Center).layoutWeight(1).onClick(() => { this.page = 'study'; this.execute(async () => { this.study = await this.api.post<Study>('study/list'); }); })
+
+            Column({ space: 2 }) {
+              Image($r('app.media.icon_profile')).width(23).height(23).fillColor(this.page === 'profile' ? '#26A69A' : '#777777')
+              Text('我的').fontSize(12).fontColor(this.page === 'profile' ? '#238E83' : '#777777')
+            }.height(48).justifyContent(FlexAlign.Center).layoutWeight(1).onClick(() => { this.page = 'profile'; this.execute(async () => { this.user = await this.api.post<User>('user/info'); }); })
           }.padding({ left: 8, right: 8, top: 4, bottom: 4 }).width('100%').backgroundColor(Color.White).enabled(!this.busy)
         }
       }
